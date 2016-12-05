@@ -1,0 +1,174 @@
+---
+title: "Prediction"
+author: "Isac Artzi"
+date: "12/4/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+### Goal
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "class" variable in the training set. The report below describes how the model was built, cross validation, discussion of sample error, and reasoning for various assumptions.
+
+### Model setup
+
+#### How to reproduce the resuls
+
+Random numbers depend on a seed. It is essential to use the same seed in order to generate the same sequence of random numbers. In this case the seed is simple: *1234*. Two software packages are needed *caret* and *randomForest*.
+
+#### The model
+
+Our outcome variable is *classe*, a factor variable with 5 levels. Participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in 5 different ways:
+*“exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E) (Velloso et al. 2013)."*
+
+* **Class A**: represents specified execution of the exercise
+* **Classes B-E**: represent common mistakes
+* **Prediction** is based on maximizing accuracy and minimizing the out-of-sample error. 
+* **Other variables** are also part of the prediction model.
+* A **decision tree** and **random forest** are compared in order to find the one with higher accuracy  
+
+#### Cross-validation
+
+The data was split by the predictor variable *classe* into a training (75%) and testing (25%) data subset, which were used for cross validation and to calculate the out of sample error. 
+
+#### Expected out-of-sample error
+
+* Expected out-of-sample error = 1-accuracy in the cross-validation data. 
+* Expected value of the out-of-sample error = (expected number of missclassified / total observations) in the **test** data set
+
+#### Explanation
+
+* The error type is *1-accuracy* since *classe* is an unordered factor variable. 
+* The sample size N = 19622 in the **training data set**. 
+* **training** is split into trainingSubset and testingSubset to allow cross-validation
+* All lines with missing values are removed.
+
+```{r prelim}
+#install.packages("caret")
+#install.packages("randomForest")
+#install.packages("rpart")
+#install.packages("lattice")
+#install.packages("ggplot2")
+#install.packages("rpart.plot")
+#install.packages("e1071",dependencies=TRUE)
+library(caret)
+```
+
+```{r libs}
+library("randomForest") 
+library("rpart")
+library("rpart.plot")
+library("e1071")
+
+set.seed(1234)
+```
+
+```{r loadata}
+# Ensure that the two CSV data files are saved in the same local working directory
+trainingset <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+
+# Read the testing data set 
+testingset <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!", ""))
+
+# Display dimensions
+dim(trainingset)
+dim(testingset)
+
+# Clean data
+trainingset<-trainingset[,colSums(is.na(trainingset)) == 0]
+testingset <-testingset[,colSums(is.na(testingset)) == 0]
+
+# Delete irrelevant variables.
+trainingset <- trainingset[,-c(1:7)]
+testingset  <- testingset[,-c(1:7)]
+```
+
+#### Cross-validation useing two data subsets: trainingSubset (75%) and subTest (25%)
+
+* **training data set**: 53 variables and 19622 observations
+* **testing data set**:  53 variables and 20 obsservations
+
+Create two subsets using random subsampling:
+
+```{r randomSampling}
+subsamples <- createDataPartition(y=trainingset$classe, p=0.75, list=FALSE)
+trainingSubset <- trainingset[subsamples, ] 
+testingSubset <- trainingset[-subsamples, ]
+#dim(trainingSubset)
+#dim(testingSubset)
+#head(trainingSubset)
+#head(testingSubset)
+```
+
+* The variable *classe* contains 5 levels: A, B, C, D, E. 
+* Plot of the outcome variable in order to compare the frequencies of levels A,B,C,D,E in the trainingSubset data set.
+
+```{r plot}
+plot(trainingSubset$classe, col="blue", main="Levels of classe within the trainingSubset data set", xlab="classe levels", ylab="Frequency")
+```
+
+#### Plot analysis
+* The 5 levels are not significantly different.
+* Level A is the most frequent (~4000)
+* Level D is the least frequent (~2700).
+
+#### Prediction using <Decision Tree>
+
+```{r decision}
+model1 <- rpart(classe ~ ., data=trainingSubset, method="class")
+
+# Predicting:
+prediction1 <- predict(model1, testingSubset, type = "class")
+
+# Plot of the Decision Tree
+rpart.plot(model1, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+
+```{r testingSubset}
+# testingSubset results:
+confusionMatrix(prediction1, testingSubset$classe)
+```
+
+#### Prediction using <Random Forest>
+```{r randomForest}
+model2 <- randomForest(classe ~. , data=trainingSubset, method="class")
+
+# Predicting:
+prediction2 <- predict(model2, testingSubset, type = "class")
+
+# testingSubset results:
+confusionMatrix(prediction2, testingSubset$classe)
+
+```
+
+#### Analysis and final decision
+
+* The Random Forest algorithm performed better than Decision Trees.
+* The accuracy of Random Forest model is 0.995 (95% CI: (0.993, 0.997))
+* The accuracy of Decision Tree modeal is 0.739 (95% CI: (0.727, 0.752))
+* Conclusion: Choose the random Forest model is choosen (accuracy = 0.995)
+* The expected out-of-sample error = 1-accuracy = 0.5% 
+* The Test data set comprises 20 cases, with an accuracy above 99% in the cross-validation data
+* Little chance that test samples are missclassified
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
